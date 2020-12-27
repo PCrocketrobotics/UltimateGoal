@@ -44,7 +44,6 @@ public class ComputerVision {
         parameters.cameraName = robot.opMode.hardwareMap.get(WebcamName.class, "Webcam 1");
 
         vuforia = ClassFactory.getInstance().createVuforia(parameters);
-
     }
 
     private void initTfod() {

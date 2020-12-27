@@ -29,19 +29,29 @@ public class DriverControlled extends LinearOpMode {
     public void runOpMode() {
         // Initialize all the Robot Parts.
         // First Init the Drive Train by setting up the DriveTrain Motors and Sensors.
+        telemetry.addData("Robot Initialized ... ", "START");    //
+        telemetry.update();
         robot.getDriveTrain().init();
+        robot.getWobbleGripper().init();
+        robot.getRingControl().init();
         // Send telemetry message to signify robot waiting;
-        telemetry.addData("Say", "Robot Initialized");    //
+        telemetry.addData("Robot Initialized ... ", "DONE");    //
         telemetry.update();
         // Wait for the game to start (driver presses PLAY)
         waitForStart();
+        // clear telemetry to clean up screen
+        telemetry.clearAll();
         //PROGRAM STARTS HERE -----------------------------------------------------------------------------------------------
         // run until the end of the match (driver presses STOP)
         while (opModeIsActive()) {
-            robot.getDriveTrain().DriverControlled_Drive();
-            telemetry.update();
+                robot.getDriveTrain().DriverControlled_Drive();
+                robot.getRingControl().DriverControlledRingIntake();
+                robot.getRingControl().DriverControlledRingShooter();
+                robot.getWobbleGripper().DriverControlled_WobbleServo();
+                telemetry.update();
             // PROGRAM ENDS HERE -------------------------------------------------------------------------------------
         }
     }
+
 }
 

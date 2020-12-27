@@ -2,24 +2,14 @@ package org.firstinspires.ftc.teamcode.Robot;
 
 import android.graphics.Color;
 
-import com.qualcomm.robotcore.hardware.ColorSensor;
-import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.hardware.rev.RevColorSensorV3;
+//import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DigitalChannel;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.HardwareDevice;
-import com.qualcomm.robotcore.hardware.IntegratingGyroscope;
-import com.qualcomm.hardware.logitech.LogitechGamepadF310;
-import com.qualcomm.robotcore.hardware.Servo;
 
-import com.qualcomm.hardware.modernrobotics.ModernRoboticsI2cGyro;
-import com.qualcomm.robotcore.util.ElapsedTime;
-import com.qualcomm.robotcore.util.Range;
-
-//------------------------------------------------------------------------------
 import com.qualcomm.hardware.bosch.BNO055IMU;
 import com.qualcomm.hardware.bosch.JustLoggingAccelerationIntegrator;
-
-import org.firstinspires.ftc.robotcore.external.Func;
 import org.firstinspires.ftc.robotcore.external.navigation.Acceleration;
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit;
 import org.firstinspires.ftc.robotcore.external.navigation.AxesOrder;
@@ -27,32 +17,38 @@ import org.firstinspires.ftc.robotcore.external.navigation.AxesReference;
 import org.firstinspires.ftc.robotcore.external.navigation.Orientation;
 import org.firstinspires.ftc.robotcore.external.navigation.Position;
 import org.firstinspires.ftc.robotcore.external.navigation.Velocity;
-//------------------------------------------------------------------------------
+
+import com.qualcomm.robotcore.util.ElapsedTime;
+import com.qualcomm.robotcore.util.Range;
 
 import org.firstinspires.ftc.teamcode.R;
 
 import java.util.List;
+import java.util.Locale;
 
 public class MecanumDriveTrain {
-    static final int COUNTS_PER_MOTOR_REV           = 28;      // Motor with 1:1 gear ratio
-    static final double DRIVE_GEAR_REDUCTION        = 10.5;    // Rev Ultraplanetary Motor 12:1 but actual is 10.5:1
-    static final double WHEEL_DIAMETER_INCHES       = 3.0;     // For figuring circumference
-    static final double COUNTS_PER_INCH_DOUBLE      = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_INCHES * 3.1415);
-    private static final double HEADING_THRESHOLD   = 1;
-    static final double     P_TURN_COEFF            = 0.1;
-    static final double     P_DRIVE_COEFF           = 0.15;
-    
-    DcMotorEx       left_front;
-    DcMotorEx       left_back;
-    DcMotorEx       right_front;
-    DcMotorEx       right_back;
-    DcMotorEx       arm_motor;
-    Servo           arm_servo;
-    ColorSensor     colorSensor;
+    static final int            COUNTS_PER_MOTOR_REV   = 28;      // Motor with 1:1 gear ratio
+    static final double         DRIVE_GEAR_REDUCTION   = 10.5;    // Rev Ultraplanetary Motor 12:1 but actual is 10.5:1
+    static final double         WHEEL_DIAMETER_INCHES  = 3.0;     // For figuring circumference
+    static final double         COUNTS_PER_INCH_DOUBLE = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) / (WHEEL_DIAMETER_INCHES * 3.1415);
+    private static final double HEADING_THRESHOLD      = 1;
+    static final double         P_TURN_COEFF           = 0.1;
+    static final double         P_DRIVE_COEFF          = 0.15;
 
     float hsvValues[]      = {0F, 0F, 0F};
     final float values[]   = hsvValues;
     final int SCALE_FACTOR = 255;
+
+    DcMotorEx          left_front;
+    DcMotorEx          left_back;
+    DcMotorEx          right_front;
+    DcMotorEx          right_back;
+
+    RevColorSensorV3   colorSensor;
+
+    BNO055IMU          imu;
+    Orientation        angles;
+    Acceleration       gravity;
 
     Robot robot;
 
@@ -61,16 +57,17 @@ public class MecanumDriveTrain {
     }
 
     public void init() {
-        left_front  = robot.opMode.hardwareMap.get(DcMotorEx.class, "left_front");
-        right_front = robot.opMode.hardwareMap.get(DcMotorEx.class, "right_front");
+        //Wheel Drive Motors Setup / init
+       left_front = robot.opMode.hardwareMap.get(DcMotorEx.class, "left_front");
         left_back = robot.opMode.hardwareMap.get(DcMotorEx.class, "left_back");
-        right_back =robot.opMode.hardwareMap.get(DcMotorEx.class, "right_back");
-        left_front.setDirection(DcMotor.Direction.FORWARD); // Set to REVERSE if using AndyMark motors
-        right_front.setDirection(DcMotor.Direction.REVERSE);// Set to FORWARD if using AndyMark motors
-        left_back.setDirection(DcMotor.Direction.FORWARD); // Set to REVERSE if using AndyMark motors
-        right_back.setDirection(DcMotor.Direction.REVERSE); // Set to REVERSE if using AndyMark motors
-        colorSensor = (ColorSensor) robot.opMode.hardwareMap.get(HardwareDevice.class, "sensor_color");
-        // Set all motors to zero power
+        right_front = robot.opMode.hardwareMap.get(DcMotorEx.class, "right_front");
+        right_back = robot.opMode.hardwareMap.get(DcMotorEx.class, "right_back");
+       // Set Direction of Each Drive Motor to keep Speeds identical between all motors.
+        left_front.setDirection(DcMotorEx.Direction.FORWARD);
+        left_back.setDirection(DcMotorEx.Direction.FORWARD);
+        right_front.setDirection(DcMotorEx.Direction.REVERSE);
+        right_back.setDirection(DcMotorEx.Direction.REVERSE);
+        // Init all motors to zero power
         left_front.setPower(0);
         right_front.setPower(0);
         left_back.setPower(0);
@@ -78,56 +75,48 @@ public class MecanumDriveTrain {
 
         // Set all motors to run without encoders.
         // May want to use RUN_USING_ENCODERS if encoders are installed.
-        left_front.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        right_front.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        left_back.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        right_back.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        left_front.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        right_front.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        left_back.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+        right_back.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
 
-        left_front.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        left_back.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        right_front.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        right_back.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        left_front.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        left_back.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        right_front.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+        right_back.setZeroPowerBehavior(DcMotorEx.ZeroPowerBehavior.BRAKE);
+
     }
     public void DriverControlled_Drive(){
-        double y   = robot.opMode.gamepad1.left_stick_y;  // Control to Drive Forward / Back
-        double x   = robot.opMode.gamepad1.left_stick_x;  // Strafe Control
-        double rot = robot.opMode.gamepad1.right_stick_x; // Rotation Control
-        y = y * -1;  // Pressing up on Controller is -1 in Y axis so multiply by -1 to make driving more intuitive.
-
-        // Init and Set all Power Variables to 0
-        double power_left_front  = 0;
-        double power_left_back   = 0;
+        double y = robot.opMode.gamepad1.left_stick_y; // Driver Forward / Revers
+        double x = robot.opMode.gamepad1.left_stick_x; // Strafe Control
+        double rot = robot.opMode.gamepad1.right_stick_x; //Rotation Control
+        y = y * -1;
+        //Init and Set all Power Variable to 0
+        double power_left_front = 0;
+        double power_left_back = 0;
         double power_right_front = 0;
-        double power_right_back  = 0;
-        // End Power Init
+        double power_right_back = 0;
+        // end power init
 
-        // Calculate Each Wheel Drive Power based on X, Y and Rot values from Control Pad.
-        power_left_front  = y + x + rot;
-        power_left_back   = y - x + rot;
+        //Calculate Each Wheel Drive Power based on x, y and rot values from gamepad
+        power_left_front = y + x -rot;
+        power_left_back = y - x + rot;
         power_right_front = y - x - rot;
-        power_right_back  = y + x - rot;
+        power_right_back = y + x - rot;
 
-        // Set Power on Each Wheel Motor.
         left_front.setPower(power_left_front);
         left_back.setPower(power_left_back);
         right_front.setPower(power_right_front);
         right_back.setPower(power_right_back);
 
-        // robot.opMode.telemetry to Phone for Actual Power to Wheel Motors. robot.opMode.telemetry updated in Op Mode.
-        robot.opMode.telemetry.addLine("Front Wheel Power ")
-                .addData("Left","%.3f", power_left_front)
+        robot.opMode.telemetry.addLine("Front Wheel Power")
+                .addData("Left", "%.3f", power_left_front)
                 .addData("Right", "%.3f", power_right_front);
-        robot.opMode.telemetry.addLine(" Rear Wheel Power ")
+        robot.opMode.telemetry.addLine("Rear Wheel Power")
                 .addData("Left", "%.3f", power_left_back)
-                .addData("Right","%.3f",  power_right_back);
-
-        // Code for the arm and dics launching mechanisms
-        if (robot.opMode.gamepad1.right_trigger == 1) {
-
-        }
+                .addData("Right", "%.3f", power_right_back);
     }
-
-    public void AutonomousDrive(double leftFront, double leftBack,
+    public void AutonomousDrive(double leftFront,  double leftBack,
                                 double rightFront, double rightBack,
                                 double motor_power){
         int new_left_front;
@@ -136,19 +125,20 @@ public class MecanumDriveTrain {
         int new_right_back_target;
 
         // Determine new target position, and pass to motor controller
-        new_left_front = left_front.getCurrentPosition() + (int) (COUNTS_PER_INCH_DOUBLE * leftFront);
-        new_left_back = left_back.getCurrentPosition() + (int) (COUNTS_PER_INCH_DOUBLE * leftBack);
-        new_right_front = right_front.getCurrentPosition() + (int) (COUNTS_PER_INCH_DOUBLE * rightFront);
-        new_right_back_target = right_back.getCurrentPosition() + (int) (COUNTS_PER_INCH_DOUBLE * rightBack);
+        new_left_front        = left_front.getCurrentPosition()  + (int) (COUNTS_PER_INCH_DOUBLE * leftFront);
+        new_left_back         = left_back.getCurrentPosition()   + (int) (COUNTS_PER_INCH_DOUBLE * leftBack);
+        new_right_front       = right_front.getCurrentPosition() + (int) (COUNTS_PER_INCH_DOUBLE * rightFront);
+        new_right_back_target = right_back.getCurrentPosition()  + (int) (COUNTS_PER_INCH_DOUBLE * rightBack);
+
         right_back.setTargetPosition(new_left_front);
         left_back.setTargetPosition(new_left_back);
         right_front.setTargetPosition(new_right_front);
         left_front.setTargetPosition(new_right_back_target);
 
-        left_back.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        right_back.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        left_front.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        right_front.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        left_back.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
+        right_back.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
+        left_front.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
+        right_front.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
 
         left_back.setPower(Math.abs(motor_power));
         right_back.setPower(Math.abs(motor_power));
@@ -164,17 +154,15 @@ public class MecanumDriveTrain {
     public void moveToColor(String targetColor, double motor_power){
         Color.RGBToHSV(colorSensor.red() * SCALE_FACTOR, colorSensor.green() * SCALE_FACTOR, colorSensor.blue() * SCALE_FACTOR, hsvValues);
 
-        left_back.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        right_back.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        left_front.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
-        right_front.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        left_back.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        right_back.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        left_front.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
+        right_front.setMode(DcMotorEx.RunMode.RUN_WITHOUT_ENCODER);
         Color.RGBToHSV(colorSensor.red() * SCALE_FACTOR, colorSensor.green() * SCALE_FACTOR, colorSensor.blue() * SCALE_FACTOR, hsvValues);
         right_back.setPower(motor_power);
         left_back.setPower(motor_power);
         right_front.setPower(motor_power);
         left_front.setPower(motor_power);
-
-
 
         if (targetColor == "blue"){
             while (colorSensor.blue() < 250 && (colorSensor.red() > 150) && (colorSensor.alpha() < 600)) {
@@ -214,12 +202,8 @@ public class MecanumDriveTrain {
         right_front.setPower(0);
         right_back.setPower(0);
     }
-    public void wobbleGrip(int motor_position, double motor_power, double servo) {
-        arm_motor.setTargetPosition(motor_position);
-        arm_motor.setPower(motor_power);
-        arm_servo.setPosition(servo);
-    }
-    public void gyroDrive ( double left_front_power, double left_back_power,
+
+    public void gyroDrive ( double left_front_power,  double left_back_power,
                             double right_front_power, double right_back_power,
                             double motor_power,
                             double angle) {
@@ -258,10 +242,10 @@ public class MecanumDriveTrain {
             left_back.setTargetPosition(new_left_back_target);
             right_back.setTargetPosition(new_right_back_target);
 
-            left_front.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-            right_front.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-            left_back.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-            right_back.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+            left_front.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
+            right_front.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
+            left_back.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
+            right_back.setMode(DcMotorEx.RunMode.RUN_TO_POSITION);
 
             // start motion.
             motor_power = Range.clip(Math.abs(motor_power), 0.0, 1.0);
@@ -312,8 +296,8 @@ public class MecanumDriveTrain {
             right_front.setPower(0);
 
             // Turn off RUN_TO_POSITION
-            left_front.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            right_front.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+            left_front.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
+            right_front.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         
     }
     public void gyroTurn( double speed, double angle) {
@@ -363,12 +347,25 @@ public class MecanumDriveTrain {
         double robotError;
 
         // calculate error in -179 to +180 range  (
-        robotError = targetAngle - robot.gyro.getIntegratedZValue();
+        robotError = targetAngle - readimu();
         while (robotError > 180)  robotError -= 360;
         while (robotError <= -180) robotError += 360;
         return robotError;
     }
+
     public double getSteer(double error, double PCoeff) {
         return Range.clip(error * PCoeff, -1, 1);
+    }
+    public float readimu(){
+        imu.startAccelerationIntegration(new Position(), new Velocity(), 1000);
+        angles = imu.getAngularOrientation(AxesReference.INTRINSIC, AxesOrder.ZYX, AngleUnit.DEGREES);
+        gravity = imu.getGravity();
+        return angles.firstAngle;
+    }
+    String formatAngle(AngleUnit angleunit, double angle){
+        return formatDegrees(AngleUnit.DEGREES.fromUnit(angleunit, angle));
+    }
+    String formatDegrees(double degrees){
+        return  String.format(Locale.getDefault(), "%.1f", AngleUnit.DEGREES.normalize(degrees));
     }
 }
